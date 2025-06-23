@@ -32,12 +32,45 @@ $repoJson = Join-Path $PSScriptRoot "data\repos.json"
 $statusDir = Join-Path $PSScriptRoot "status"
 $scripts = Join-Path $PSScriptRoot "scripts"
 
-if (-not (Test-Path $repoJson)) {
-    Write-Warning "⛔ Soubor repos.json nenalezen. Spusť nejprve vytvor_hub.ps1"
-    Write-Host "`n[Enter] pro návrat..." -ForegroundColor DarkGray
-    [void][System.Console]::ReadLine()
-    return
+# 🔄 Automatické generování repos.json při každém spuštění
+Write-Host "🔍 Aktualizuji seznam repozitářů..." -ForegroundColor Cyan
+
+$roots = @($PSScriptRoot, (Join-Path $PSScriptRoot ".." | Resolve-Path | Select-Object -ExpandProperty Path))
+$repos = @()
+
+foreach ($root in $roots) {
+    if (Test-Path (Join-Path $root ".git")) {
+        $repos += [PSCustomObject]@{
+            Nazev = Split-Path $root -Leaf
+            Cesta = $root
+            Stav  = "⏳ Bez akce"
+            PosledniZmena = $null
+        }
+    }
+
+    $repos += Get-ChildItem -Path $root -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.FullName ".git") } |
+        ForEach-Object {
+            [PSCustomObject]@{
+                Nazev = Split-Path $_.FullName -Leaf
+                Cesta = $_.FullName
+                Stav  = "⏳ Bez akce"
+                PosledniZmena = $null
+            }
+        }
 }
+
+# Odstranit duplicity podle cesty
+$repos = $repos | Sort-Object Cesta -Unique
+
+if (-not (Test-Path (Split-Path $repoJson))) {
+    New-Item -ItemType Directory -Path (Split-Path $repoJson) -Force | Out-Null
+}
+
+$repos | ConvertTo-Json -Depth 2 | Set-Content -Path $repoJson -Encoding UTF8
+
+    Write-Host "✅ Vygenerováno repos.json s $($repos.Count) repozitář(i)" -ForegroundColor Green
+
 
 while ($true) {
     Clear-Host
